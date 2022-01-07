@@ -1,11 +1,14 @@
 const i18n = require("../util/i18n");
 const { play } = require("../include/play");
+const { getSoundAudioInfo } = require("../queries");
 const ytdl = require("ytdl-core");
 const YouTubeAPI = require("simple-youtube-api");
 const scdl = require("soundcloud-downloader").default;
 const https = require("https");
+const { request } = require("graphql-request");
 const { YOUTUBE_API_KEY, SOUNDCLOUD_CLIENT_ID, DEFAULT_VOLUME } = require("../util/Util");
 const youtube = new YouTubeAPI(YOUTUBE_API_KEY);
+const soundGqlEndpoint = "https://www.sound.xyz/api/graphql";
 
 module.exports = {
   name: "play",
@@ -38,8 +41,10 @@ module.exports = {
     const playlistPattern = /^.*(list=)([^#\&\?]*).*/gi;
     const scRegex = /^https?:\/\/(soundcloud\.com)\/(.*)$/;
     const mobileScRegex = /^https?:\/\/(soundcloud\.app\.goo\.gl)\/(.*)$/;
+    const soundRegex = /^(https?:\/\/)?(www\.)(sound\.xyz)\/(.*)$/;
     const url = args[0];
     const urlValid = videoPattern.test(args[0]);
+    const isSoundUrl = soundRegex.test(url);
 
     // Start the playlist if playlist url was provided
     if (!videoPattern.test(args[0]) && playlistPattern.test(args[0])) {
@@ -102,6 +107,20 @@ module.exports = {
         console.error(error);
         return message.reply(error.message).catch(console.error);
       }
+    } else if (isSoundUrl) {
+      const params = new URL(url);
+      const [garbage, ...rest] = params.pathname.split("/");
+      const res = await request(soundGqlEndpoint, getSoundAudioInfo, {
+        soundHandle: rest[0],
+        releaseSlug: rest[1]
+      });
+      const { tracks, title } = res.getMintedRelease;
+      const { duration, audio } = tracks[0];
+      song = {
+        duration,
+        title,
+        url: audio.url
+      };
     } else {
       try {
         const results = await youtube.searchVideos(search, 1, { part: "id" });
@@ -119,7 +138,7 @@ module.exports = {
         };
       } catch (error) {
         console.error(error);
-        
+
         if (error.message.includes("410")) {
           return message.reply(i18n.__("play.songAccessErr")).catch(console.error);
         } else {

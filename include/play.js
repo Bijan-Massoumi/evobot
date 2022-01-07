@@ -1,6 +1,6 @@
 const ytdl = require("ytdl-core-discord");
 const scdl = require("soundcloud-downloader").default;
-const { canModifyQueue, STAY_TIME } = require("../util/Util");
+const { canModifyQueue, STAY_TIME, convertWavEndpointToMp3 } = require("../util/Util");
 const i18n = require("../util/i18n");
 
 module.exports = {
@@ -30,6 +30,7 @@ module.exports = {
     }
 
     let stream = null;
+    let mp3Name = null;
     let streamType = song.url.includes("youtube.com") ? "opus" : "ogg/opus";
 
     try {
@@ -38,10 +39,15 @@ module.exports = {
       } else if (song.url.includes("soundcloud.com")) {
         try {
           stream = await scdl.downloadFormat(song.url, scdl.FORMATS.OPUS, SOUNDCLOUD_CLIENT_ID);
+
+          console.log(stream);
         } catch (error) {
           stream = await scdl.downloadFormat(song.url, scdl.FORMATS.MP3, SOUNDCLOUD_CLIENT_ID);
           streamType = "unknown";
         }
+      } else {
+        mp3Name = await convertWavEndpointToMp3(song.url);
+        streamType = "mp3";
       }
     } catch (error) {
       if (queue) {
@@ -57,8 +63,9 @@ module.exports = {
 
     queue.connection.on("disconnect", () => message.client.queue.delete(message.guild.id));
 
+    const params = streamType === "mp3" ? [`./sounds/${mp3Name}`] : [stream, { type: streamType }];
     const dispatcher = queue.connection
-      .play(stream, { type: streamType })
+      .play(...params)
       .on("finish", () => {
         if (collector && !collector.ended) collector.stop();
 
